@@ -54,6 +54,7 @@ use Symfony\Component\Console\Debug\CliRequest;
 use Symfony\Component\Console\Messenger\RunCommandMessageHandler;
 use Symfony\Component\DependencyInjection\Alias;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
+use Symfony\Component\DependencyInjection\Attribute\Constructor;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -698,6 +699,12 @@ class FrameworkExtension extends Extension
         });
         $container->registerAttributeForAutoconfiguration(AsSchedule::class, static function (ChildDefinition $definition, AsSchedule $attribute): void {
             $definition->addTag('scheduler.schedule_provider', ['name' => $attribute->name]);
+        });
+        $container->registerAttributeForAutoconfiguration(Constructor::class, static function (ChildDefinition $definition, Constructor $attribute, \ReflectionMethod $reflector): void {
+            if (!$reflector->isStatic()) {
+                throw new LogicException(sprintf('Constructor attribute cannot be applied to non-static method "%s::%s".', $reflector->class, $reflector->name));
+            }
+            $definition->addTag('container.from_constructor', ['method' => $reflector->name]);
         });
         foreach ([AsPeriodicTask::class, AsCronTask::class] as $taskAttributeClass) {
             $container->registerAttributeForAutoconfiguration(
