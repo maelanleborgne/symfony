@@ -54,6 +54,7 @@ use Symfony\Component\Console\Debug\CliRequest;
 use Symfony\Component\Console\Messenger\RunCommandMessageHandler;
 use Symfony\Component\DependencyInjection\Alias;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
+use Symfony\Component\DependencyInjection\Attribute\Factory;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -660,6 +661,20 @@ class FrameworkExtension extends Extension
         $container->registerForAutoconfiguration(LoggerAwareInterface::class)
             ->addMethodCall('setLogger', [new Reference('logger')]);
 
+        $container->registerAttributeForAutoconfiguration(Factory::class, static function (ChildDefinition $definition, Factory $attribute, \ReflectionClass|\ReflectionMethod $reflector) {
+            $tagAttributes = get_object_vars($attribute);
+            if ($reflector instanceof \ReflectionMethod) {
+                if (!$reflector->isStatic()) {
+                    throw new LogicException(sprintf('Factory attribute can only be applied to classes or static methods on "%s::%s()".', $reflector->class, $reflector->name));
+                }
+                if (isset($tagAttributes['method']) || isset($tagAttributes['class']) || isset($tagAttributes['service']) || isset($tagAttributes['expression'])) {
+                    throw new LogicException(sprintf('Factory attribute applied to a static method cannot declare a method, class, service or expression on "%s::%s()".', $reflector->class, $reflector->name));
+                }
+                $tagAttributes['method'] = $reflector->getName();
+                $tagAttributes['class'] = $reflector->getDeclaringClass()->name;
+            }
+            $definition->addTag('container.factory', $tagAttributes);
+        });
         $container->registerAttributeForAutoconfiguration(AsEventListener::class, static function (ChildDefinition $definition, AsEventListener $attribute, \ReflectionClass|\ReflectionMethod $reflector) {
             $tagAttributes = get_object_vars($attribute);
             if ($reflector instanceof \ReflectionMethod) {
