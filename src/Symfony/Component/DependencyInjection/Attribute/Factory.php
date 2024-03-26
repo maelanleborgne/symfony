@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\DependencyInjection\Attribute;
 
+use Symfony\Component\DependencyInjection\Exception\LogicException;
+
 /**
  * An attribute to define the factory for a base type.
  *
@@ -27,10 +29,16 @@ class Factory
         public array $arguments = [],
     )
     {
-        if ((null !== $this->class && null !== $this->service) ||
-            (null !== $this->class && null !== $this->expression) ||
-            (null !== $this->service && null !== $this->expression)) {
-            throw new \LogicException('The #[Factory] attribute must declare only one of "$expression", "$class" or "$service".');
+        if (!$this->assertOneOrNoneOf($this->class, $this->service, $this->expression)) {
+            throw new LogicException('The #[Factory] attribute must declare one or none of "$expression", "$class" or "$service".');
         }
+        if (isset($this->method) && isset($this->expression)) {
+            throw new LogicException('The #[Factory] attribute cannot declare both "$method" and "$expression".');
+        }
+    }
+
+    private function assertOneOrNoneOf(...$arguments): string
+    {
+        return 1 >= \count(array_filter($arguments, fn ($argument) => null !== $argument));
     }
 }
