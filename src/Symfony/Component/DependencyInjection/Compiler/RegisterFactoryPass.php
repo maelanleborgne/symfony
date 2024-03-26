@@ -15,6 +15,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\LogicException;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\ExpressionLanguage\Expression;
+use Symfony\Component\Yaml\Parser;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Register factories for services tagged with "container.from_factory".
@@ -23,6 +25,7 @@ use Symfony\Component\ExpressionLanguage\Expression;
  */
 final class RegisterFactoryPass implements CompilerPassInterface
 {
+    private ?Parser $yamlParser;
     private static \Closure $registerFactoryConfigurationClosure;
 
     public function process(ContainerBuilder $container): void
@@ -36,6 +39,10 @@ final class RegisterFactoryPass implements CompilerPassInterface
             }
 
             $factory = $this->resolveFactory($tagArguments, $class);
+            $arguments = array_map(
+                fn ($argument) => ($this->yamlParser ??= new Parser())->parse($argument, Yaml::PARSE_CUSTOM_TAGS),
+                    $tagArguments['arguments'] ?? []
+            );
 
             if (!isset(self::$registerFactoryConfigurationClosure)) {
                 /** @var YamlFileLoader $yamlLoader */
@@ -56,7 +63,7 @@ final class RegisterFactoryPass implements CompilerPassInterface
                 };
             }
 
-            (self::$registerFactoryConfigurationClosure)($container, $id, $class->getFileName(), $factory, $tagArguments['arguments'] ?? []);
+            (self::$registerFactoryConfigurationClosure)($container, $id, $class->getFileName(), $factory, $arguments);
         }
     }
 

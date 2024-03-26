@@ -39,6 +39,6 @@ class Factory
 
     private function assertOneOrNoneOf(...$arguments): string
     {
-        return 1 >= \count(array_filter($arguments, fn ($argument) => null !== $argument));
+        return \count(array_filter($arguments, fn ($argument) => null !== $argument)) <= 1;
     }
 }

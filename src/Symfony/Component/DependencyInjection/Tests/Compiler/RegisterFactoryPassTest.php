@@ -12,10 +12,13 @@
 namespace Symfony\Component\DependencyInjection\Tests\Compiler;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Argument\RewindableGenerator;
 use Symfony\Component\DependencyInjection\Compiler\RegisterFactoryPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\LogicException;
+use Symfony\Component\DependencyInjection\Exception\RuntimeException;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
 /**
  * @phpstan-type TagArguments array{class?: string, service?: string, method?: string, expression?: string, arguments?: array}
@@ -32,7 +35,7 @@ class RegisterFactoryPassTest extends TestCase
     {
         $container = new ContainerBuilder();
         $container->register('foo', FactoryInstantiatedService::class)
-            ->setTags(['container.from_factory' => [$tagArguments]]);
+            ->addTag('container.from_factory', $tagArguments);
 
         $this->expectException($exceptionClass);
 
@@ -82,7 +85,7 @@ class RegisterFactoryPassTest extends TestCase
         $container = new ContainerBuilder();
         $container->register('foo', FactoryInstantiatedService::class)
             ->setPublic(true)
-            ->setTags(['container.from_factory' => [$tagArguments]]);
+            ->addTag('container.from_factory', $tagArguments);
 
         (new RegisterFactoryPass())->process($container);
 
@@ -117,8 +120,8 @@ class RegisterFactoryPassTest extends TestCase
         $container = new ContainerBuilder();
         $container->register('foo', FactoryInstantiatedService::class)
             ->setPublic(true)
-            ->setTags(['container.from_factory' => [$tagArguments]]);
-        $container->register('factory_service_id', FactoryInstantiatorService::class);
+            ->addTag('container.from_factory', $tagArguments);
+        $container->register('factory_service_id', FactoryService::class);
         (new RegisterFactoryPass())->process($container);
 
         $definition = $container->getDefinition('foo');
@@ -153,8 +156,8 @@ class RegisterFactoryPassTest extends TestCase
         $container = new ContainerBuilder();
         $container->register('foo', FactoryInstantiatedService::class)
             ->setPublic(true)
-            ->setTags(['container.from_factory' => [$tagArguments]]);
-        $container->register('factory_service_id', FactoryInstantiatorService::class)
+            ->addTag('container.from_factory', $tagArguments);
+        $container->register('factory_service_id', FactoryService::class)
             ->setPublic(true);
         (new RegisterFactoryPass())->process($container);
 
@@ -192,6 +195,102 @@ class RegisterFactoryPassTest extends TestCase
             ],
         ];
     }
+
+    public function testParameterArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', '/path/to/project');
+        $container->register('foo', FactoryInstantiatedService::class)
+            ->setPublic(true)
+            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['"%kernel.project_dir%"']]);
+
+        (new RegisterFactoryPass())->process($container);
+        $container->compile();
+        $instance = $container->get('foo');
+        $this->assertEquals('/path/to/project', $instance->args[0]);
+    }
+
+    public function testAbstractArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('foo', FactoryInstantiatedService::class)
+            ->setPublic(true)
+            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!abstract "should be defined somehow"']]);
+        $this->expectException(RuntimeException::class);
+
+        (new RegisterFactoryPass())->process($container);
+        $container->compile();
+        $container->get('foo');
+    }
+
+    public function testIteratorArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('foo', FactoryInstantiatedService::class)
+            ->setPublic(true)
+            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!iterator ["value 1", "value 2"]']]);
+
+        (new RegisterFactoryPass())->process($container);
+        $container->compile();
+        $instance = $container->get('foo');
+        $iterator = $instance->args[0];
+        $this->assertInstanceOf(RewindableGenerator::class, $iterator);
+        $array = iterator_to_array($iterator);
+        $this->assertEquals('value 1', $array[0]);
+        $this->assertEquals('value 2', $array[1]);
+    }
+
+    public function testServiceClosureArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('other_service', FactoryService::class);
+        $container->register('foo', FactoryInstantiatedService::class)
+            ->setPublic(true)
+            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!service_closure "@other_service"']]);
+
+        (new RegisterFactoryPass())->process($container);
+        $container->compile();
+        $instance = $container->get('foo');
+        $serviceClosure = $instance->args[0];
+        $this->assertInstanceOf(\Closure::class, $serviceClosure);
+        $this->assertInstanceOf(FactoryService::class, $serviceClosure());
+    }
+
+    public function testServiceLocatorArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('other_service', FactoryService::class);
+        $container->register('foo', FactoryInstantiatedService::class)
+            ->setPublic(true)
+            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!service_locator ["@other_service"]']]);
+
+        (new RegisterFactoryPass())->process($container);
+        $container->compile();
+        $instance = $container->get('foo');
+        $serviceLocator = $instance->args[0];
+        $this->assertInstanceOf(ServiceLocator::class, $serviceLocator);
+        $this->assertInstanceOf(FactoryService::class, $serviceLocator->get('other_service'));
+    }
+
+    public function testTaggedIteratorArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('other_service', FactoryService::class)
+            ->addTag('custom_tag');
+        $container->register('foo', FactoryInstantiatedService::class)
+            ->setPublic(true)
+            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!tagged_iterator "custom_tag"']]);
+
+        (new RegisterFactoryPass())->process($container);
+        $container->compile();
+        $instance = $container->get('foo');
+        $iterator = $instance->args[0];
+        $this->assertInstanceOf(RewindableGenerator::class, $iterator);
+        $array = iterator_to_array($iterator);
+        $this->assertInstanceOf(FactoryService::class, $array[0]);
+    }
+
+    //TODO: test bound arguments ?
 }
 
 final class FactoryInstantiatedService
@@ -208,13 +307,13 @@ final class FactoryInstantiatedService
         return $instance;
     }
 
-    public function getInstanceValidationKey()
+    public function getInstanceValidationKey(): string
     {
         return $this->factoryName.implode('', $this->args);
     }
 }
 
-final class FactoryInstantiatorService
+final class FactoryService
 {
     public function __invoke($randomArgName = null, $foo = null): FactoryInstantiatedService
     {
@@ -226,7 +325,7 @@ final class FactoryInstantiatorService
         return $this->createService('service_create', [$randomArgName, $foo]);
     }
 
-    private function createService($factoryName, $arguments)
+    private function createService(string $factoryName, array $arguments): FactoryInstantiatedService
     {
         $instance = new FactoryInstantiatedService();
         $instance->factoryName = $factoryName;
