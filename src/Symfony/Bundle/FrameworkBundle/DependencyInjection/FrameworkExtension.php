@@ -666,44 +666,7 @@ class FrameworkExtension extends Extension
             ->addMethodCall('setLogger', [new Reference('logger')]);
 
         $container->registerAttributeForAutoconfiguration(Factory::class, static function (ChildDefinition $definition, Factory $attribute, \ReflectionClass|\ReflectionMethod $reflector) {
-            $tagAttributes = get_object_vars($attribute);
-            if ($reflector instanceof \ReflectionMethod) {
-                if (!$reflector->isStatic()) {
-                    throw new LogicException(sprintf('Factory attribute can only be applied to classes or static methods on "%s::%s()".', $reflector->class, $reflector->name));
-                }
-                if (isset($tagAttributes['method']) || isset($tagAttributes['class']) || isset($tagAttributes['service']) || isset($tagAttributes['expression'])) {
-                    throw new LogicException(sprintf('Factory attribute applied to a static method cannot declare a method, class, service or expression on "%s::%s()".', $reflector->class, $reflector->name));
-                }
-                $tagAttributes['method'] = $reflector->getName();
-                $tagAttributes['class'] = $reflector->getDeclaringClass()->name;
-                $reflector = $reflector->getDeclaringClass();
-            } else {
-                if (null === $tagAttributes['class'] && null === $tagAttributes['service'] && null === $tagAttributes['expression']) {
-                    $tagAttributes['class'] = $reflector->getName();
-                }
-                if (null === $tagAttributes['method'] && (null !== $tagAttributes['class'] || null !== $tagAttributes['service'])) {
-                    $tagAttributes['method'] = '__invoke';
-                }
-            }
-            // Prevent using both #[Factory] and #[Autoconfigure(constructor:...)]
-            $autoconfigureWithConstructor = array_filter(
-                $reflector->getAttributes(Autoconfigure::class, \ReflectionAttribute::IS_INSTANCEOF),
-                static fn(\ReflectionAttribute $attr) => null !== $attr->newInstance()->constructor
-            );
-            if (0 !== \count($autoconfigureWithConstructor)) {
-                throw new AutoconfigureFailedException($reflector->name, sprintf('Using both attributes #[Factory] and #[Autoconfigure(constructor: ...)] on is not allowed in %s.', $reflector->name));
-            }
-            // We have to use internals from YamlDumper to dump arguments to string
-            $yamlDumperReflector = new \ReflectionClass(YamlDumper::class);
-            $yamlDumper = $yamlDumperReflector->newInstanceWithoutConstructor();
-            $dumpValue = $yamlDumperReflector->getMethod('dumpValue');
-            $rawYamlDumper = new Dumper();
-            $tagAttributes['arguments'] = array_map(
-                static fn ($argument) =>  $rawYamlDumper->dump($dumpValue->invoke($yamlDumper, $argument)),
-                $tagAttributes['arguments'] ?? []
-            );
-
-            $definition->addTag('container.from_factory', $tagAttributes);
+            $definition->addTag('container.from_factory_attribute');
         });
         $container->registerAttributeForAutoconfiguration(AsEventListener::class, static function (ChildDefinition $definition, AsEventListener $attribute, \ReflectionClass|\ReflectionMethod $reflector) {
             $tagAttributes = get_object_vars($attribute);

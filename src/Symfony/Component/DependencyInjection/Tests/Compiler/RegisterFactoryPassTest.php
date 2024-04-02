@@ -15,183 +15,155 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Argument\RewindableGenerator;
 use Symfony\Component\DependencyInjection\Compiler\RegisterFactoryPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Exception\AutoconfigureFailedException;
 use Symfony\Component\DependencyInjection\Exception\LogicException;
-use Symfony\Component\DependencyInjection\Exception\RuntimeException;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\DependencyInjection\Tests\Fixtures\Factory as FactoryFixtures;
+use Symfony\Component\DependencyInjection\Tests\Fixtures\Factory\FactoryService;
 
 /**
  * @phpstan-type TagArguments array{class?: string, service?: string, method?: string, expression?: string, arguments?: array}
  */
 class RegisterFactoryPassTest extends TestCase
 {
-    /**
-     * @dataProvider provideInvalid
-     *
-     * @param TagArguments             $tagArguments
-     * @param class-string<\Throwable> $exceptionClass
-     */
-    public function testInvalid(array $tagArguments, string $exceptionClass): void
+    public function testMultipleAttributesOnSameClass(): void
     {
         $container = new ContainerBuilder();
-        $container->register('foo', FactoryInstantiatedService::class)
-            ->addTag('container.from_factory', $tagArguments);
+        $container->register('foo', FactoryFixtures\MultipleAttributeClass::class)
+            ->addTag('container.from_factory_attribute');
 
-        $this->expectException($exceptionClass);
+        $this->expectException(LogicException::class);
 
         (new RegisterFactoryPass())->process($container);
     }
 
-    /**
-     * @return list<array{0: TagArguments, 1: class-string<\Throwable>}>
-     */
-    public static function provideInvalid(): array
+    public function testConflictWithAutoconfigure(): void
     {
-        return [
-            // No method, no arguments
-            [[], LogicException::class],
-            [['class' => FactoryInstantiatedService::class, 'service' => 'service_id'], LogicException::class],
-            [['class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            [['service' => 'service_id', 'expression' => 'expression'], LogicException::class],
-            [['service' => 'service_id', 'class' => FactoryInstantiatedService::class], LogicException::class],
-            [['service' => 'service_id', 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            // No arguments
-            [['method' => 'create', 'expression' => 'expression'], LogicException::class],
-            [['method' => 'create', 'service' => 'service_id', 'expression' => 'expression'], LogicException::class],
-            [['method' => 'create', 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            [['method' => 'create', 'service' => 'service_id', 'class' => FactoryInstantiatedService::class], LogicException::class],
-            [['method' => 'create', 'service' => 'service_id', 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            // No method
-            [['arguments' => ['arg1', 'arg2'], 'service' => 'service_id', 'expression' => 'expression'], LogicException::class],
-            [['arguments' => ['arg1', 'arg2'], 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            [['arguments' => ['arg1', 'arg2'], 'service' => 'service_id', 'class' => FactoryInstantiatedService::class], LogicException::class],
-            [['arguments' => ['arg1', 'arg2'], 'service' => 'service_id', 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            // With methods and arguments
-            [['arguments' => ['arg1', 'arg2'], 'method' => 'create', 'service' => 'service_id', 'expression' => 'expression'], LogicException::class],
-            [['arguments' => ['arg1', 'arg2'], 'method' => 'create', 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-            [['arguments' => ['arg1', 'arg2'], 'method' => 'create', 'service' => 'service_id', 'class' => FactoryInstantiatedService::class], LogicException::class],
-            [['arguments' => ['arg1', 'arg2'], 'method' => 'create', 'service' => 'service_id', 'class' => FactoryInstantiatedService::class, 'expression' => 'expression'], LogicException::class],
-        ];
+        $container = new ContainerBuilder();
+        $container->register('foo', FactoryFixtures\AutoconfigureAttributeClass::class)
+            ->addTag('container.from_factory_attribute');
+
+        $this->expectException(AutoconfigureFailedException::class);
+
+        (new RegisterFactoryPass())->process($container);
     }
 
     /**
      * @dataProvider provideSelfFactory
      *
-     * @param TagArguments                 $tagArguments
+     * @param class-string $class
      * @param array{string, string} $expectedFactory
      */
-    public function testSelfFactory(array $tagArguments, array $expectedFactory, array $expectedArguments, string $instanceValidationKey): void
+    public function testSelfFactory(string $class, array $expectedFactory, array $expectedArguments, string $instanceValidationKey): void
     {
         $container = new ContainerBuilder();
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', $class)
             ->setPublic(true)
-            ->addTag('container.from_factory', $tagArguments);
+            ->addTag('container.from_factory_attribute');
 
-        (new RegisterFactoryPass())->process($container);
-
+        $container->compile();
         $definition = $container->getDefinition('foo');
         $this->assertEquals($expectedFactory, $definition->getFactory());
         $this->assertEquals($expectedArguments, $definition->getArguments());
-        $container->compile();
         $instance = $container->get('foo');
         $this->assertEquals($instanceValidationKey, $instance->getInstanceValidationKey());
     }
 
     /**
-     * @return list<array{0: TagArguments, 1: array{string, string}, 2: array, 3: string}>
+     * @return list<array{0: class-string, 1: array{string, string}, 2: array, 3: string}>
      */
     public static function provideSelfFactory(): array
     {
         return [
-            [['method' => 'create'], [FactoryInstantiatedService::class, 'create'], [], 'self_create'],
-            [['method' => 'create', 'class' => FactoryInstantiatedService::class], [FactoryInstantiatedService::class, 'create'], [], 'self_create'],
-            [['method' => 'create', 'class' => FactoryInstantiatedService::class, 'arguments' => [123456, '$foo' => 'bar']], [FactoryInstantiatedService::class, 'create'], [123456, '$foo' => 'bar'], 'self_create123456bar'],
+            [FactoryFixtures\SelfEmptyOnMethod::class, [FactoryFixtures\SelfEmptyOnMethod::class, 'create'], [], 'self_create'],
+            [FactoryFixtures\SelfWithMethod::class, [FactoryFixtures\SelfWithMethod::class, 'create'], [], 'self_create'],
+            [FactoryFixtures\SelfWithClassAndMethod::class, [FactoryFixtures\SelfWithClassAndMethod::class, 'create'], [], 'self_create'],
+            [FactoryFixtures\SelfWithMethodAndArgs::class, [FactoryFixtures\SelfWithMethodAndArgs::class, 'create'], [123456, 'bar'], 'self_create123456bar'],
         ];
     }
 
     /**
      * @dataProvider provideServiceFactory
      *
-     * @param TagArguments                 $tagArguments
+     * @param class-string                   $class
      * @param array{Reference, string} $expectedFactory
      */
-    public function testServiceFactory(array $tagArguments, array $expectedFactory, array $expectedArguments, string $instanceValidationKey): void
+    public function testServiceFactory(string $class, array $expectedFactory, array $expectedArguments, string $instanceValidationKey): void
     {
         $container = new ContainerBuilder();
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', $class)
             ->setPublic(true)
-            ->addTag('container.from_factory', $tagArguments);
-        $container->register('factory_service_id', FactoryService::class);
-        (new RegisterFactoryPass())->process($container);
+            ->addTag('container.from_factory_attribute');
+        $container->register('factory_service_id', FactoryService::class)
+            ->setPublic(true);
 
+        $container->compile();
         $definition = $container->getDefinition('foo');
         $this->assertEquals($expectedFactory, $definition->getFactory());
         $this->assertEquals($expectedArguments, $definition->getArguments());
-        $container->compile();
         $instance = $container->get('foo');
         $this->assertEquals($instanceValidationKey, $instance->getInstanceValidationKey());
     }
-
     /**
-     * @return list<array{0: TagArguments, 1: array{Reference, string}, 2: array, 3: string}>
+     * @return list<array{0: class-string, 1: array{Reference, string}, 2: array, 3: string}>
      */
     public static function provideServiceFactory(): array
     {
         return [
-            [['method' => 'create', 'service' => 'factory_service_id'], [new Reference('factory_service_id'), 'create'], [], 'service_create'],
-            [['method' => 'create', 'service' => '@factory_service_id', 'arguments' => ['arg1', '$foo' => 123456]], [new Reference('factory_service_id'), 'create'], ['arg1', '$foo' => 123456], 'service_createarg1123456'],
-            [['service' => 'factory_service_id', 'arguments' => ['arg1', '$foo' => 123456]], [new Reference('factory_service_id'), '__invoke'], ['arg1', '$foo' => 123456], 'service_invokearg1123456'],
-            [['service' => '@factory_service_id', 'arguments' => ['arg1', '$foo' => 123456]], [new Reference('factory_service_id'), '__invoke'], ['arg1', '$foo' => 123456], 'service_invokearg1123456'],
+            [FactoryFixtures\ServiceAndMethod::class, [new Reference('factory_service_id'), 'create'], ['targetClass' => FactoryFixtures\ServiceAndMethod::class], 'service_create'],
+            [FactoryFixtures\ServiceWithAtPrefixAndMethodAndArguments::class, [new Reference('factory_service_id'), 'create'], ['arg1', 123456, FactoryFixtures\ServiceWithAtPrefixAndMethodAndArguments::class], 'service_createarg1123456'],
+            [FactoryFixtures\ServiceNoMethodAndArguments::class, [new Reference('factory_service_id'), '__invoke'], ['arg1', 123456, FactoryFixtures\ServiceNoMethodAndArguments::class], 'service_invokearg1123456'],
+            [FactoryFixtures\ServiceReferenceNoMethodAndArguments::class, [new Reference('factory_service_id'), '__invoke'], ['arg1', 123456, FactoryFixtures\ServiceReferenceNoMethodAndArguments::class], 'service_invokearg1123456'],
         ];
     }
 
     /**
      * @dataProvider provideExpressionFactory
      *
-     * @param TagArguments                 $tagArguments
-     * @param string $expectedFactory
+     * @param class-string $class
      */
-    public function testExpressionFactory(array $tagArguments, string $expectedFactory, array $expectedArguments, string $instanceValidationKey): void
+    public function testExpressionFactory(string $class, string $expectedFactory, array $expectedArguments, string $instanceValidationKey): void
     {
         $container = new ContainerBuilder();
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', $class)
             ->setPublic(true)
-            ->addTag('container.from_factory', $tagArguments);
+            ->addTag('container.from_factory_attribute');
         $container->register('factory_service_id', FactoryService::class)
             ->setPublic(true);
         (new RegisterFactoryPass())->process($container);
 
+        $container->compile();
         $definition = $container->getDefinition('foo');
         $this->assertEquals($expectedFactory, $definition->getFactory());
         $this->assertEquals($expectedArguments, $definition->getArguments());
-        $container->compile();
         $instance = $container->get('foo');
         $this->assertEquals($instanceValidationKey, $instance->getInstanceValidationKey());
     }
 
     /**
-     * @return list<array{0: TagArguments, 1: string, 2: array, 3: string}>
+     * @return list<array{0: class-string, 1: string, 2: array, 3: string}>
      */
     public static function provideExpressionFactory(): array
     {
         return [
             [
-                [
-                    'expression' => 'arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1)) : service("factory_service_id").__invoke(arg(0), arg(1))',
-                    'arguments' => [5, 9],
-                ],
-                '@=arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1)) : service("factory_service_id").__invoke(arg(0), arg(1))',
-                [5, 9],
+                FactoryFixtures\ExpressionAsString::class,
+                '@=arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1), arg(2)) : service("factory_service_id").__invoke(arg(0), arg(1), arg(2))',
+                [5, 9, FactoryFixtures\ExpressionAsString::class],
                 'service_create59',
             ],
             [
-                [
-                    'expression' => '@=arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1)) : service("factory_service_id").__invoke(arg(0), arg(1))',
-                    'arguments' => [2, 4],
-                ],
-                '@=arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1)) : service("factory_service_id").__invoke(arg(0), arg(1))',
-                [2, 4],
+                FactoryFixtures\ExpressionAsStringWithAtPrefix::class,
+                '@=arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1), arg(2)) : service("factory_service_id").__invoke(arg(0), arg(1), arg(2))',
+                [2, 4, FactoryFixtures\ExpressionAsStringWithAtPrefix::class],
                 'service_invoke24',
+            ],
+            [
+                FactoryFixtures\ExpressionAsTypedExpression::class,
+                '@=arg(0) + arg(1) > 10 ? service("factory_service_id").create(arg(0), arg(1), arg(2)) : service("factory_service_id").__invoke(arg(0), arg(1), arg(2))',
+                [3, 8, FactoryFixtures\ExpressionAsTypedExpression::class],
+                'service_create38',
             ],
         ];
     }
@@ -200,35 +172,23 @@ class RegisterFactoryPassTest extends TestCase
     {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.project_dir', '/path/to/project');
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', FactoryFixtures\WithParameterArgument::class)
             ->setPublic(true)
-            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['"%kernel.project_dir%"']]);
+            ->addTag('container.from_factory_attribute');
 
         (new RegisterFactoryPass())->process($container);
         $container->compile();
         $instance = $container->get('foo');
-        $this->assertEquals('/path/to/project', $instance->args[0]);
-    }
-
-    public function testAbstractArgument(): void
-    {
-        $container = new ContainerBuilder();
-        $container->register('foo', FactoryInstantiatedService::class)
-            ->setPublic(true)
-            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!abstract "should be defined somehow"']]);
-        $this->expectException(RuntimeException::class);
-
-        (new RegisterFactoryPass())->process($container);
-        $container->compile();
-        $container->get('foo');
+        $this->assertEquals('/path/to/project', $instance->args[0]); // from type parameter
+        $this->assertEquals('/path/to/project', $instance->args[1]); // from %kernel.project_dir%
     }
 
     public function testIteratorArgument(): void
     {
         $container = new ContainerBuilder();
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', FactoryFixtures\WithIteratorArgument::class)
             ->setPublic(true)
-            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!iterator ["value 1", "value 2"]']]);
+            ->addTag('container.from_factory_attribute');
 
         (new RegisterFactoryPass())->process($container);
         $container->compile();
@@ -244,9 +204,9 @@ class RegisterFactoryPassTest extends TestCase
     {
         $container = new ContainerBuilder();
         $container->register('other_service', FactoryService::class);
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', FactoryFixtures\WithServiceClosureArgument::class)
             ->setPublic(true)
-            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!service_closure "@other_service"']]);
+            ->addTag('container.from_factory_attribute');
 
         (new RegisterFactoryPass())->process($container);
         $container->compile();
@@ -260,9 +220,9 @@ class RegisterFactoryPassTest extends TestCase
     {
         $container = new ContainerBuilder();
         $container->register('other_service', FactoryService::class);
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', FactoryFixtures\WithServiceLocatorArgument::class)
             ->setPublic(true)
-            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!service_locator ["@other_service"]']]);
+            ->addTag('container.from_factory_attribute');
 
         (new RegisterFactoryPass())->process($container);
         $container->compile();
@@ -277,9 +237,9 @@ class RegisterFactoryPassTest extends TestCase
         $container = new ContainerBuilder();
         $container->register('other_service', FactoryService::class)
             ->addTag('custom_tag');
-        $container->register('foo', FactoryInstantiatedService::class)
+        $container->register('foo', FactoryFixtures\WithTaggedIteratorArgument::class)
             ->setPublic(true)
-            ->addTag('container.from_factory', ['method' => 'create', 'arguments' => ['!tagged_iterator "custom_tag"']]);
+            ->addTag('container.from_factory_attribute');
 
         (new RegisterFactoryPass())->process($container);
         $container->compile();
@@ -288,49 +248,5 @@ class RegisterFactoryPassTest extends TestCase
         $this->assertInstanceOf(RewindableGenerator::class, $iterator);
         $array = iterator_to_array($iterator);
         $this->assertInstanceOf(FactoryService::class, $array[0]);
-    }
-
-    //TODO: test bound arguments ?
-}
-
-final class FactoryInstantiatedService
-{
-    public ?string $factoryName = null;
-    public array $args = [];
-
-    public static function create($randomArgName = null, $foo = null): self
-    {
-        $instance = new self();
-        $instance->factoryName = 'self_create';
-        $instance->args = [$randomArgName, $foo];
-
-        return $instance;
-    }
-
-    public function getInstanceValidationKey(): string
-    {
-        return $this->factoryName.implode('', $this->args);
-    }
-}
-
-final class FactoryService
-{
-    public function __invoke($randomArgName = null, $foo = null): FactoryInstantiatedService
-    {
-        return $this->createService('service_invoke', [$randomArgName, $foo]);
-    }
-
-    public function create($randomArgName = null, $foo = null): FactoryInstantiatedService
-    {
-        return $this->createService('service_create', [$randomArgName, $foo]);
-    }
-
-    private function createService(string $factoryName, array $arguments): FactoryInstantiatedService
-    {
-        $instance = new FactoryInstantiatedService();
-        $instance->factoryName = $factoryName;
-        $instance->args = $arguments;
-
-        return $instance;
     }
 }

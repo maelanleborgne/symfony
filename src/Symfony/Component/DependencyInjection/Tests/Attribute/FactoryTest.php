@@ -14,6 +14,8 @@ namespace Symfony\Component\DependencyInjection\Tests\Attribute;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Attribute\Factory;
 use Symfony\Component\DependencyInjection\Exception\LogicException;
+use Symfony\Component\DependencyInjection\Parameter;
+use Symfony\Component\DependencyInjection\Reference;
 
 class FactoryTest extends TestCase
 {
@@ -23,44 +25,89 @@ class FactoryTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testMethodOnly()
+    /**
+     * @dataProvider provideInvalidArguments
+     *
+     * @param array<string, string> $factoryArguments
+     * @param class-string<\Throwable> $expectedException
+     */
+    public function testExceptionOnConstruct(array $factoryArguments, string $expectedException)
     {
-        new Factory(method: 'my_method');
-        $this->assertEquals('my_method', (new Factory(method: 'my_method'))->method);
+        $this->expectException($expectedException);
+        new Factory(...$factoryArguments);
     }
 
-    public function testClassAndService()
+    /**
+     * @return array<string, array{0: array<string, string>, 1: class-string<\Throwable>}>
+     */
+    public static function provideInvalidArguments(): array
     {
-        $this->expectException(LogicException::class);
-
-        new Factory(class: 'my_class', service: 'my_service');
+        return [
+            'class_and_service' => [['class' => 'my_class', 'service' => 'my_service'], LogicException::class],
+            'class_and_expression' => [['class' => 'my_class', 'expression' => 'my_expression'], LogicException::class],
+            'service_and_expression' => [['service' => 'my_service', 'expression' => 'my_expression'], LogicException::class],
+            'class_and_service_and_expression' => [['class' => 'my_class', 'service' => 'my_service', 'expression' => 'my_expression'], LogicException::class],
+            'expression_and_method' => [['method' => 'static_method', 'expression' => 'my_expression'], LogicException::class],
+        ];
     }
 
-    public function testClassAndExpression()
+    public function testGetFactoryOnNonStaticMethod()
     {
-        $this->expectException(LogicException::class);
+        $class = $this->createMock(\ReflectionClass::class);
+        $class->method('getName')->willReturn('MyClass');
+        $target = $this->createMock(\ReflectionMethod::class);
+        $target->method('isStatic')->willReturn(false);
+        $target->method('getDeclaringClass')->willReturn($class);
 
-        new Factory(class: 'my_class', expression: 'my_expression');
+        $factory = new Factory();
+        $this->expectException(LogicException::class);
+        $factory->getFactoryForTarget($target);
     }
 
-    public function testServiceAndExpression()
+    public function testGetFactoryOnMethodWithService()
     {
-        $this->expectException(LogicException::class);
+        $class = $this->createMock(\ReflectionClass::class);
+        $class->method('getName')->willReturn('MyClass');
+        $target = $this->createMock(\ReflectionMethod::class);
+        $target->method('isStatic')->willReturn(true);
+        $target->method('getDeclaringClass')->willReturn($class);
 
-        new Factory(service: 'my_service', expression: 'my_expression');
+        $factory = new Factory(service: 'my_service');
+        $this->expectException(LogicException::class);
+        $factory->getFactoryForTarget($target);
     }
 
-    public function testClassAndServiceAndExpression()
+    public function testGetFactoryOnMethodWithExpression()
     {
-        $this->expectException(LogicException::class);
+        $class = $this->createMock(\ReflectionClass::class);
+        $class->method('getName')->willReturn('MyClass');
+        $target = $this->createMock(\ReflectionMethod::class);
+        $target->method('isStatic')->willReturn(true);
+        $target->method('getDeclaringClass')->willReturn($class);
 
-        new Factory(class: 'my_class', service: 'my_service', expression: 'my_expression');
+        $factory = new Factory(expression: 'my_expression');
+        $this->expectException(LogicException::class);
+        $factory->getFactoryForTarget($target);
     }
 
-    public function testExpressionAndMethod()
+    /**
+     * @dataProvider provideGetFactoryForTarget
+     */
+    public function testGetArguments(array $arguments, array $expected)
     {
-        $this->expectException(LogicException::class);
+        $factory = new Factory(class: 'foo', arguments: $arguments);
+        $this->assertEquals($expected, $factory->getArguments());
+    }
 
-        new Factory(method: 'static_method', expression: 'my_expression');
+    public static function provideGetFactoryForTarget()
+    {
+        return [
+            'no_arguments' => [[], []],
+            'string_argument' => [['arg1'], ['arg1']],
+            'parameter_as_a_string' => [['%foo%'], [new Parameter('foo')]],
+            'reference_as_a_string' => [['@foo'], [new Reference('foo')]],
+            'typed_parameter' => [[new Parameter('foo')], [new Parameter('foo')]],
+            'typed_reference' => [[new Reference('foo')], [new Reference('foo')]],
+        ];
     }
 }
