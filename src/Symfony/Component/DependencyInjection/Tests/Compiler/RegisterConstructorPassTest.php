@@ -48,11 +48,11 @@ class RegisterConstructorPassTest extends TestCase
      */
     public static function provideInvalidTags(): \Generator
     {
-        yield 'with_multiple_tags' => [[['name' => 'container.from_constructor', 'attributes' => []], ['name' => 'container.from_constructor', 'attributes' => []]]];
-        yield 'with_no_method' => [[['name' => 'container.from_constructor', 'attributes' => []]]];
-        yield 'with_non_existant_method' => [[['name' => 'container.from_constructor', 'attributes' => ['method' => 'notARealMethod']]]];
-        yield 'with_non_public_method' => [[['name' => 'container.from_constructor', 'attributes' => ['method' => 'protectedCreate']]]];
-        yield 'with_non_static_method' => [[['name' => 'container.from_constructor', 'attributes' => ['method' => 'nonStaticCreate']]]];
+        yield 'duplicate tag' => [[['name' => 'container.from_constructor', 'attributes' => []], ['name' => 'container.from_constructor', 'attributes' => []]]];
+        yield 'missing "method" key' => [[['name' => 'container.from_constructor', 'attributes' => []]]];
+        yield 'non existant method' => [[['name' => 'container.from_constructor', 'attributes' => ['method' => 'notARealMethod']]]];
+        yield 'private method' => [[['name' => 'container.from_constructor', 'attributes' => ['method' => 'protectedCreate']]]];
+        yield 'non static method' => [[['name' => 'container.from_constructor', 'attributes' => ['method' => 'nonStaticCreate']]]];
     }
 
     public function testProcessUntaggedDefinition(): void
@@ -64,7 +64,7 @@ class RegisterConstructorPassTest extends TestCase
         $definition = $container->getDefinition('foo');
 
         $this->assertArrayNotHasKey('factory', $definition->getChanges());
-        $this->assertEquals(null, $definition->getFactory());
+        $this->assertNull($definition->getFactory());
     }
 
     public function testProcessValidDefinition(): void
@@ -77,7 +77,7 @@ class RegisterConstructorPassTest extends TestCase
         $definition = $container->getDefinition('foo');
 
         $this->assertArrayHasKey('factory', $definition->getChanges());
-        $this->assertEquals([null, 'create'], $definition->getFactory());
+        $this->assertSame([null, 'create'], $definition->getFactory());
     }
 
     public function testAttributeAutoconfiguration(): void
@@ -98,9 +98,9 @@ class RegisterConstructorPassTest extends TestCase
 
         $this->assertArrayHasKey('container.from_constructor', $definition->getTags());
         $this->assertArrayHasKey('method', $definition->getTag('container.from_constructor')[0]);
-        $this->assertEquals('create', $definition->getTag('container.from_constructor')[0]['method']);
+        $this->assertSame('create', $definition->getTag('container.from_constructor')[0]['method']);
         $this->assertArrayHasKey('factory', $definition->getChanges());
-        $this->assertEquals([SelfFactoryClass::class, 'create'], $definition->getFactory());
+        $this->assertSame([SelfFactoryClass::class, 'create'], $definition->getFactory());
     }
 
     public function testAutowireConstructorArguments(): void
@@ -126,10 +126,10 @@ class RegisterConstructorPassTest extends TestCase
         $argument2 = $definition->getArgument(1);
 
         $this->assertInstanceOf(TypedReference::class, $argument1);
-        $this->assertEquals(AnotherService::class, $argument1->getType());
-        $this->assertEquals(AnotherService::class, (string)$argument1);
+        $this->assertSame(AnotherService::class, $argument1->getType());
+        $this->assertSame(AnotherService::class, (string)$argument1);
         $this->assertIsString($argument2);
-        $this->assertEquals('parameter_value', $argument2);
+        $this->assertSame('parameter_value', $argument2);
     }
 }
 
@@ -140,7 +140,7 @@ class SelfFactoryClass
     {
         return new self();
     }
-    protected static function protectedCreate(): self
+    private static function protectedCreate(): self
     {
         return new self();
     }
