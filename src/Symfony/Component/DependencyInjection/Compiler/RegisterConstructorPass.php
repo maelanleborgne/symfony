@@ -24,8 +24,11 @@ final class RegisterConstructorPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         foreach ($container->findTaggedServiceIds('container.from_constructor') as $id => $tags) {
-            if (1 !== count($tags) || !key_exists('method', $tags[0])) {
+            if (1 !== count($tags)) {
                 throw new AutoconfigureFailedException($id, sprintf('Multiple tags "container.from_constructor" attached to service %s. The #[Constructor] attribute can only be applied to one method.', $id));
+            }
+            if (!key_exists('method', $tags[0])) {
+                throw new AutoconfigureFailedException($id, sprintf('Tag "container.from_constructor" attached to service %s must have a "method" attribute.', $id));
             }
             $definition = $container->getDefinition($id);
             $methodName = $tags[0]['method'];
