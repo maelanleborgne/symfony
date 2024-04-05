@@ -46,6 +46,7 @@ class PassConfig
                 new AutowireAsDecoratorPass(),
                 new AttributeAutoconfigurationPass(),
                 new ResolveInstanceofConditionalsPass(),
+                new RegisterFactoryPass(),
                 new RegisterEnvVarProcessorsPass(),
             ],
             -1000 => [new ExtensionCompilerPass()],
