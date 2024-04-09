@@ -702,9 +702,25 @@ class FrameworkExtension extends Extension
         });
         $container->registerAttributeForAutoconfiguration(Constructor::class, static function (ChildDefinition $definition, Constructor $attribute, \ReflectionMethod $reflector): void {
             if (!$reflector->isStatic()) {
-                throw new LogicException(sprintf('Constructor attribute cannot be applied to non-static method "%s::%s".', $reflector->class, $reflector->name));
+                throw new LogicException(sprintf('Cannot use "%s::%s()" as a constructor: the method should be static.', $reflector->class, $reflector->name));
             }
-            $definition->addTag('container.from_constructor', ['method' => $reflector->name]);
+            $declaringClass = $reflector->getDeclaringClass();
+            $reachableStaticMethods = [];
+            foreach ($declaringClass->getMethods(\ReflectionMethod::IS_STATIC) as $method) {
+                $reachableStaticMethods[] = $method->name;
+                if ($declaringClass->name !== $method->class || // If it's been declared by a parent
+                    $reflector->name === $method->name || // If it's the method we're processing
+                    0 === \count($method->getAttributes(Constructor::class)) // If it doesn't have the attribute
+                ) {
+                    continue;
+                }
+                throw new LogicException(sprintf('Cannot use "%s::%s()" as a constructor: only one constructor can be defined for a given class (already applied to "%s").', $reflector->class, $reflector->name, $method->name));
+            }
+            $factory = $definition->getFactory();
+            // Set the factory if it isn't set yet or if it's set to a method at the same/higher inheritance level
+            if (null === $factory || (\is_array($factory) && \in_array($factory[1], $reachableStaticMethods, true))) {
+                $definition->setFactory([null, $reflector->name]);
+            }
         });
         foreach ([AsPeriodicTask::class, AsCronTask::class] as $taskAttributeClass) {
             $container->registerAttributeForAutoconfiguration(
