@@ -15,7 +15,10 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\Attribute\Constructor;
 use Symfony\Component\DependencyInjection\ChildDefinition;
+use Symfony\Component\DependencyInjection\Compiler\AttributeAutoconfigurationPass;
+use Symfony\Component\DependencyInjection\Compiler\AutowirePass;
 use Symfony\Component\DependencyInjection\Compiler\RegisterConstructorPass;
+use Symfony\Component\DependencyInjection\Compiler\ResolveInstanceofConditionalsPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\AutoconfigureFailedException;
 use Symfony\Component\DependencyInjection\Exception\LogicException;
@@ -86,21 +89,19 @@ class RegisterConstructorPassTest extends TestCase
         $container->register('foo', SelfFactoryClass::class)
             ->setPublic(true)
             ->setAutoconfigured(true);
-        $container->registerAttributeForAutoconfiguration(Constructor::class, static function (ChildDefinition $definition, Constructor $attribute, \ReflectionMethod $reflector): void {
-            if (!$reflector->isStatic()) {
-                throw new LogicException(sprintf('Constructor attribute cannot be applied to non-static method "%s::%s".', $reflector->class, $reflector->name));
-            }
-            $definition->addTag('container.from_constructor', ['method' => $reflector->name]);
-        });
+        $container->registerAttributeForAutoconfiguration(Constructor::class, self::autoconfigurationCallback(...));
 
-        $container->compile();
+        (new AttributeAutoconfigurationPass())->process($container);
+        (new ResolveInstanceofConditionalsPass())->process($container);
+        (new RegisterConstructorPass())->process($container);
+
         $definition = $container->getDefinition('foo');
 
         $this->assertArrayHasKey('container.from_constructor', $definition->getTags());
         $this->assertArrayHasKey('method', $definition->getTag('container.from_constructor')[0]);
         $this->assertSame('create', $definition->getTag('container.from_constructor')[0]['method']);
         $this->assertArrayHasKey('factory', $definition->getChanges());
-        $this->assertSame([SelfFactoryClass::class, 'create'], $definition->getFactory());
+        $this->assertSame([null, 'create'], $definition->getFactory());
     }
 
     public function testAutowireConstructorArguments(): void
@@ -113,23 +114,30 @@ class RegisterConstructorPassTest extends TestCase
         $container->register(AnotherService::class)
             ->setPublic(true);
         $container->setParameter('bar', 'parameter_value');
-        $container->registerAttributeForAutoconfiguration(Constructor::class, static function (ChildDefinition $definition, Constructor $attribute, \ReflectionMethod $reflector): void {
-            if (!$reflector->isStatic()) {
-                throw new LogicException(sprintf('Constructor attribute cannot be applied to non-static method "%s::%s".', $reflector->class, $reflector->name));
-            }
-            $definition->addTag('container.from_constructor', ['method' => $reflector->name]);
-        });
+        $container->registerAttributeForAutoconfiguration(Constructor::class, self::autoconfigurationCallback(...));
 
-        $container->compile();
+        (new AttributeAutoconfigurationPass())->process($container);
+        (new ResolveInstanceofConditionalsPass())->process($container);
+        (new RegisterConstructorPass())->process($container);
+        (new AutowirePass())->process($container);
+
         $definition = $container->getDefinition('foo');
         $argument1 = $definition->getArgument(0);
         $argument2 = $definition->getArgument(1);
 
         $this->assertInstanceOf(TypedReference::class, $argument1);
         $this->assertSame(AnotherService::class, $argument1->getType());
-        $this->assertSame(AnotherService::class, (string)$argument1);
+        $this->assertSame(AnotherService::class, (string) $argument1);
         $this->assertIsString($argument2);
         $this->assertSame('parameter_value', $argument2);
+    }
+
+    private static function autoconfigurationCallback(ChildDefinition $definition, Constructor $attribute, \ReflectionMethod $reflector): void
+    {
+        if (!$reflector->isStatic()) {
+            throw new LogicException(sprintf('Constructor attribute cannot be applied to non-static method "%s::%s".', $reflector->class, $reflector->name));
+        }
+        $definition->addTag('container.from_constructor', ['method' => $reflector->name]);
     }
 }
 
@@ -140,10 +148,12 @@ class SelfFactoryClass
     {
         return new self();
     }
+
     private static function protectedCreate(): self
     {
         return new self();
     }
+
     public function nonStaticCreate(): self
     {
         return new self();
@@ -152,5 +162,4 @@ class SelfFactoryClass
 
 class AnotherService
 {
-
 }

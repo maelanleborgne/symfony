@@ -15,7 +15,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\AutoconfigureFailedException;
 
 /**
- * Sets the constructor of services tagged with 'container.from_constructor'
+ * Sets the constructor of services tagged with 'container.from_constructor'.
  *
  * @author Maelan Le Borgne <maelan.leborgne@gmail.com>
  */
