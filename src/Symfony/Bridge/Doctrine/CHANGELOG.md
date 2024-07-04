@@ -4,7 +4,10 @@ CHANGELOG
 7.1
 ---
 
- * Deprecate the `DoctrineExtractor::getTypes()` method, use `DoctrineExtractor::getType()` instead
+ * Allow `EntityValueResolver` to return a list of entities
+ * Add support for auto-closing idle connections
+ * Allow validating every class against `UniqueEntity` constraint
+ * Deprecate auto-mapping of entities in favor of mapped route parameters
 
 7.0
 ---

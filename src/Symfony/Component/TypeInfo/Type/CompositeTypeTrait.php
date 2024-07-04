@@ -13,6 +13,7 @@ namespace Symfony\Component\TypeInfo\Type;
 
 use Symfony\Component\TypeInfo\Exception\InvalidArgumentException;
 use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
 
 /**
  * @author Mathias Arlaud <mathias.arlaud@gmail.com>
@@ -46,6 +47,11 @@ trait CompositeTypeTrait
 
         usort($types, fn (Type $a, Type $b): int => (string) $a <=> (string) $b);
         $this->types = array_values(array_unique($types));
+    }
+
+    public function isA(TypeIdentifier|string $subject): bool
+    {
+        return $this->is(fn (Type $type) => $type->isA($subject));
     }
 
     /**

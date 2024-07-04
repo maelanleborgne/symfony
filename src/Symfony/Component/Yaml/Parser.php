@@ -42,8 +42,8 @@ class Parser
     /**
      * Parses a YAML file into a PHP value.
      *
-     * @param string $filename The path to the YAML file to be parsed
-     * @param int    $flags    A bit field of Yaml::PARSE_* constants to customize the YAML parser behavior
+     * @param string                     $filename The path to the YAML file to be parsed
+     * @param int-mask-of<Yaml::PARSE_*> $flags    A bit field of Yaml::PARSE_* constants to customize the YAML parser behavior
      *
      * @throws ParseException If the file could not be read or the YAML is not valid
      */
@@ -69,8 +69,8 @@ class Parser
     /**
      * Parses a YAML string to a PHP value.
      *
-     * @param string $value A YAML string
-     * @param int    $flags A bit field of Yaml::PARSE_* constants to customize the YAML parser behavior
+     * @param string                     $value A YAML string
+     * @param int-mask-of<Yaml::PARSE_*> $flags A bit field of Yaml::PARSE_* constants to customize the YAML parser behavior
      *
      * @throws ParseException If the YAML is not valid
      */
@@ -299,7 +299,7 @@ class Parser
                     if (!$this->isNextLineIndented() && !$this->isNextLineUnIndentedCollection()) {
                         // Spec: Keys MUST be unique; first one wins.
                         // But overwriting is allowed when a merge node is used in current block.
-                        if ($allowOverwrite || !isset($data[$key])) {
+                        if ($allowOverwrite || !\array_key_exists($key, $data)) {
                             if (null !== $subTag) {
                                 $data[$key] = new TaggedValue($subTag, '');
                             } else {
@@ -320,7 +320,7 @@ class Parser
                             }
 
                             $data += $value;
-                        } elseif ($allowOverwrite || !isset($data[$key])) {
+                        } elseif ($allowOverwrite || !\array_key_exists($key, $data)) {
                             // Spec: Keys MUST be unique; first one wins.
                             // But overwriting is allowed when a merge node is used in current block.
                             if (null !== $subTag) {
@@ -336,7 +336,7 @@ class Parser
                     $value = $this->parseValue(rtrim($values['value']), $flags, $context);
                     // Spec: Keys MUST be unique; first one wins.
                     // But overwriting is allowed when a merge node is used in current block.
-                    if ($allowOverwrite || !isset($data[$key])) {
+                    if ($allowOverwrite || !\array_key_exists($key, $data)) {
                         $data[$key] = $value;
                     } else {
                         throw new ParseException(sprintf('Duplicate key "%s" detected.', $key), $this->getRealCurrentLineNb() + 1, $this->currentLine);
@@ -633,12 +633,12 @@ class Parser
             }
 
             if ($this->isCurrentLineBlank()) {
-                $data[] = substr($this->currentLine, $newIndent);
+                $data[] = substr($this->currentLine, $newIndent ?? 0);
                 continue;
             }
 
             if ($indent >= $newIndent) {
-                $data[] = substr($this->currentLine, $newIndent);
+                $data[] = substr($this->currentLine, $newIndent ?? 0);
             } elseif ($this->isCurrentLineComment()) {
                 $data[] = $this->currentLine;
             } elseif (0 == $indent) {

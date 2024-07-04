@@ -534,6 +534,35 @@ class GetSetMethodNormalizerTest extends TestCase
 
         $this->assertEquals($denormalized, $normalizer->denormalize(['type' => 'two', 'url' => 'url'], GetSetMethodDummyInterface::class));
     }
+
+    public function testSupportsAndNormalizeWithOnlyParentGetter()
+    {
+        $obj = new GetSetDummyChild();
+        $obj->setFoo('foo');
+
+        $this->assertTrue($this->normalizer->supportsNormalization($obj));
+        $this->assertSame(['foo' => 'foo'], $this->normalizer->normalize($obj));
+    }
+
+    public function testSupportsAndDenormalizeWithOnlyParentSetter()
+    {
+        $this->assertTrue($this->normalizer->supportsDenormalization(['foo' => 'foo'], GetSetDummyChild::class));
+
+        $obj = $this->normalizer->denormalize(['foo' => 'foo'], GetSetDummyChild::class);
+        $this->assertSame('foo', $obj->getFoo());
+    }
+
+    /**
+     * @testWith [{"foo":"foo"}, "getFoo", "foo"]
+     *           [{"bar":"bar"}, "getBar", "bar"]
+     */
+    public function testSupportsAndDenormalizeWithOptionalSetterArgument(array $data, string $method, string $expected)
+    {
+        $this->assertTrue($this->normalizer->supportsDenormalization($data, GetSetDummyWithOptionalAndMultipleSetterArgs::class));
+
+        $obj = $this->normalizer->denormalize($data, GetSetDummyWithOptionalAndMultipleSetterArgs::class);
+        $this->assertSame($expected, $obj->$method());
+    }
 }
 
 class GetSetDummy
@@ -834,5 +863,50 @@ class GetSetMethodDiscriminatedDummyTwo implements GetSetMethodDummyInterface
     public function setUrl(string $url): void
     {
         $this->url = $url;
+    }
+}
+
+class GetSetDummyChild extends GetSetDummyParent
+{
+}
+
+class GetSetDummyParent
+{
+    private $foo;
+
+    public function getFoo()
+    {
+        return $this->foo;
+    }
+
+    public function setFoo($foo)
+    {
+        $this->foo = $foo;
+    }
+}
+
+class GetSetDummyWithOptionalAndMultipleSetterArgs
+{
+    private $foo;
+    private $bar;
+
+    public function getFoo()
+    {
+        return $this->foo;
+    }
+
+    public function setFoo($foo = null)
+    {
+        $this->foo = $foo;
+    }
+
+    public function getBar()
+    {
+        return $this->bar;
+    }
+
+    public function setBar($bar = null, $other = true)
+    {
+        $this->bar = $bar;
     }
 }

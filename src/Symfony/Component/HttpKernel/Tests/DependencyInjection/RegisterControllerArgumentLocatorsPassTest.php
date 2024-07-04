@@ -31,6 +31,7 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\DependencyInjection\TypedReference;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\DependencyInjection\RegisterControllerArgumentLocatorsPass;
+use Symfony\Component\HttpKernel\Tests\Fixtures\DataCollector\DummyController;
 use Symfony\Component\HttpKernel\Tests\Fixtures\Suit;
 
 class RegisterControllerArgumentLocatorsPassTest extends TestCase
@@ -293,6 +294,21 @@ class RegisterControllerArgumentLocatorsPassTest extends TestCase
         $this->assertTrue($container->getDefinition('foo')->isPublic());
     }
 
+    public function testControllersAreMadeNonLazy()
+    {
+        $container = new ContainerBuilder();
+        $container->register('argument_resolver.service')->addArgument([]);
+
+        $container->register('foo', DummyController::class)
+            ->addTag('controller.service_arguments')
+            ->setLazy(true);
+
+        $pass = new RegisterControllerArgumentLocatorsPass();
+        $pass->process($container);
+
+        $this->assertFalse($container->getDefinition('foo')->isLazy());
+    }
+
     /**
      * @dataProvider provideBindings
      */
@@ -502,6 +518,9 @@ class RegisterControllerArgumentLocatorsPassTest extends TestCase
         $this->assertFalse($locator->has('service2'));
     }
 
+    /**
+     * @group legacy
+     */
     public function testTaggedIteratorAndTaggedLocatorAttributes()
     {
         $container = new ContainerBuilder();
@@ -524,14 +543,10 @@ class RegisterControllerArgumentLocatorsPassTest extends TestCase
         /** @var ServiceLocator $locator */
         $locator = $container->get($locatorId)->get('foo::fooAction');
 
-        $this->assertCount(6, $locator->getProvidedServices());
+        $this->assertCount(2, $locator->getProvidedServices());
 
         $this->assertTrue($locator->has('iterator1'));
         $this->assertInstanceOf(RewindableGenerator::class, $argIterator = $locator->get('iterator1'));
-        $this->assertCount(2, $argIterator);
-
-        $this->assertTrue($locator->has('iterator2'));
-        $this->assertInstanceOf(RewindableGenerator::class, $argIterator = $locator->get('iterator2'));
         $this->assertCount(2, $argIterator);
 
         $this->assertTrue($locator->has('locator1'));
@@ -541,9 +556,38 @@ class RegisterControllerArgumentLocatorsPassTest extends TestCase
         $this->assertTrue($argLocator->has('baz'));
 
         $this->assertSame(iterator_to_array($argIterator), [$argLocator->get('bar'), $argLocator->get('baz')]);
+    }
 
-        $this->assertTrue($locator->has('locator2'));
-        $this->assertInstanceOf(ServiceLocator::class, $argLocator = $locator->get('locator2'));
+    public function testAutowireIteratorAndAutowireLocatorAttributes()
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('some.parameter', 'bar');
+        $resolver = $container->register('argument_resolver.service', \stdClass::class)->addArgument([]);
+
+        $container->register('bar', \stdClass::class)->addTag('foobar');
+        $container->register('baz', \stdClass::class)->addTag('foobar');
+
+        $container->register('foo', WithAutowireIteratorAndAutowireLocator::class)
+            ->addTag('controller.service_arguments');
+
+        (new RegisterControllerArgumentLocatorsPass())->process($container);
+
+        $locatorId = (string) $resolver->getArgument(0);
+        $container->getDefinition($locatorId)->setPublic(true);
+
+        $container->compile();
+
+        /** @var ServiceLocator $locator */
+        $locator = $container->get($locatorId)->get('foo::fooAction');
+
+        $this->assertCount(4, $locator->getProvidedServices());
+
+        $this->assertTrue($locator->has('iterator1'));
+        $this->assertInstanceOf(RewindableGenerator::class, $argIterator = $locator->get('iterator1'));
+        $this->assertCount(2, $argIterator);
+
+        $this->assertTrue($locator->has('locator1'));
+        $this->assertInstanceOf(ServiceLocator::class, $argLocator = $locator->get('locator1'));
         $this->assertCount(2, $argLocator);
         $this->assertTrue($argLocator->has('bar'));
         $this->assertTrue($argLocator->has('baz'));
@@ -724,9 +768,16 @@ class WithTaggedIteratorAndTaggedLocator
 {
     public function fooAction(
         #[TaggedIterator('foobar')] iterable $iterator1,
-        #[AutowireIterator('foobar')] iterable $iterator2,
         #[TaggedLocator('foobar')] ServiceLocator $locator1,
-        #[AutowireLocator('foobar')] ServiceLocator $locator2,
+    ) {
+    }
+}
+
+class WithAutowireIteratorAndAutowireLocator
+{
+    public function fooAction(
+        #[AutowireIterator('foobar')] iterable $iterator1,
+        #[AutowireLocator('foobar')] ServiceLocator $locator1,
         #[AutowireLocator(['bar', 'baz'])] ContainerInterface $container1,
         #[AutowireLocator(['foo' => new Autowire('%some.parameter%')])] ContainerInterface $container2,
     ) {

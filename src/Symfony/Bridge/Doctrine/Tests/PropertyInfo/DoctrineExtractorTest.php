@@ -15,6 +15,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\EventManager;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\DefaultSchemaManagerFactory;
+use Doctrine\DBAL\Types\BigIntType;
 use Doctrine\DBAL\Types\Type as DBALType;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Mapping\Driver\AttributeDriver;
@@ -107,8 +108,6 @@ class DoctrineExtractorTest extends TestCase
     }
 
     /**
-     * @group legacy
-     *
      * @dataProvider legacyTypesProvider
      */
     public function testExtractLegacy(string $property, ?array $type = null)
@@ -116,9 +115,6 @@ class DoctrineExtractorTest extends TestCase
         $this->assertEquals($type, $this->createExtractor()->getTypes(DoctrineDummy::class, $property, []));
     }
 
-    /**
-     * @group legacy
-     */
     public function testExtractWithEmbeddedLegacy()
     {
         $expectedTypes = [new LegacyType(
@@ -136,9 +132,6 @@ class DoctrineExtractorTest extends TestCase
         $this->assertEquals($expectedTypes, $actualTypes);
     }
 
-    /**
-     * @group legacy
-     */
     public function testExtractEnumLegacy()
     {
         $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, EnumString::class)], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumString', []));
@@ -148,15 +141,19 @@ class DoctrineExtractorTest extends TestCase
         $this->assertNull($this->createExtractor()->getTypes(DoctrineEnum::class, 'enumCustom', []));
     }
 
-    /**
-     * @group legacy
-     */
     public static function legacyTypesProvider(): array
     {
+        // DBAL 4 has a special fallback strategy for BINGINT (int -> string)
+        if (!method_exists(BigIntType::class, 'getName')) {
+            $expectedBingIntType = [new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        } else {
+            $expectedBingIntType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
+
         return [
             ['id', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
             ['guid', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
-            ['bigint', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            ['bigint', $expectedBingIntType],
             ['time', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTime')]],
             ['timeImmutable', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
             ['dateInterval', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateInterval')]],
@@ -243,9 +240,6 @@ class DoctrineExtractorTest extends TestCase
         $this->assertNull($this->createExtractor()->getProperties('Not\Exist'));
     }
 
-    /**
-     * @group legacy
-     */
     public function testGetTypesCatchExceptionLegacy()
     {
         $this->assertNull($this->createExtractor()->getTypes('Not\Exist', 'baz'));
@@ -290,9 +284,16 @@ class DoctrineExtractorTest extends TestCase
      */
     public static function typeProvider(): iterable
     {
+        // DBAL 4 has a special fallback strategy for BINGINT (int -> string)
+        if (!method_exists(BigIntType::class, 'getName')) {
+            $expectedBigIntType = Type::collection(Type::int(), Type::string());
+        } else {
+            $expectedBigIntType = Type::string();
+        }
+
         yield ['id', Type::int()];
         yield ['guid', Type::string()];
-        yield ['bigint', Type::string()];
+        yield ['bigint', $expectedBigIntType];
         yield ['time', Type::object(\DateTime::class)];
         yield ['timeImmutable', Type::object(\DateTimeImmutable::class)];
         yield ['dateInterval', Type::object(\DateInterval::class)];

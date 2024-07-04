@@ -19,6 +19,7 @@ use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
+use Symfony\Component\Serializer\Attribute\Ignore;
 use Symfony\Component\Serializer\Exception\LogicException;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Serializer\Exception\RuntimeException;
@@ -43,9 +44,6 @@ use Symfony\Component\Serializer\Tests\Fixtures\OtherSerializedNameDummy;
 use Symfony\Component\Serializer\Tests\Fixtures\Php74Dummy;
 use Symfony\Component\Serializer\Tests\Fixtures\Php74DummyPrivate;
 use Symfony\Component\Serializer\Tests\Fixtures\Php80Dummy;
-use Symfony\Component\Serializer\Tests\Fixtures\SamePropertyAsMethodDummy;
-use Symfony\Component\Serializer\Tests\Fixtures\SamePropertyAsMethodWithMethodSerializedNameDummy;
-use Symfony\Component\Serializer\Tests\Fixtures\SamePropertyAsMethodWithPropertySerializedNameDummy;
 use Symfony\Component\Serializer\Tests\Fixtures\SiblingHolder;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\AttributesTestTrait;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\CacheableObjectAttributesTestTrait;
@@ -267,6 +265,22 @@ class ObjectNormalizerTest extends TestCase
         $data->baz = true;
         $data->fooBar = 'foobar';
         $obj = $this->normalizer->denormalize($data, ObjectConstructorDummy::class, 'any');
+        $this->assertEquals('foo', $obj->getFoo());
+        $this->assertEquals('bar', $obj->bar);
+    }
+
+    public function testConstructorWithObjectDenormalizeUsingPropertyInfoExtractor()
+    {
+        $serializer = $this->createMock(ObjectSerializerNormalizer::class);
+        $normalizer = new ObjectNormalizer(null, null, null, null, null, null, [], new PropertyInfoExtractor());
+        $normalizer->setSerializer($serializer);
+
+        $data = new \stdClass();
+        $data->foo = 'foo';
+        $data->bar = 'bar';
+        $data->baz = true;
+        $data->fooBar = 'foobar';
+        $obj = $normalizer->denormalize($data, ObjectConstructorDummy::class, 'any');
         $this->assertEquals('foo', $obj->getFoo());
         $this->assertEquals('bar', $obj->bar);
     }
@@ -870,51 +884,39 @@ class ObjectNormalizerTest extends TestCase
         }
     }
 
-    public function testSamePropertyAsMethod()
+    public function testNormalizeWithoutSerializerSet()
     {
-        $object = new SamePropertyAsMethodDummy('free_trial', 'has_subscribe', 'get_ready', 'is_active');
-        $expected = [
-            'freeTrial' => 'free_trial',
-            'hasSubscribe' => 'has_subscribe',
-            'getReady' => 'get_ready',
-            'isActive' => 'is_active',
-        ];
+        $normalizer = new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader()));
 
-        $this->assertSame($expected, $this->normalizer->normalize($object));
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Cannot normalize attribute "foo" because the injected serializer is not a normalizer.');
+
+        $normalizer->normalize(new ObjectConstructorDummy([], [], []));
     }
 
-    public function testSamePropertyAsMethodWithPropertySerializedName()
+    public function testNormalizeWithIgnoreAttributeAndPrivateProperties()
     {
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $this->normalizer = new ObjectNormalizer($classMetadataFactory, new MetadataAwareNameConverter($classMetadataFactory));
-        $this->normalizer->setSerializer($this->serializer);
+        $normalizer = new ObjectNormalizer($classMetadataFactory);
 
-        $object = new SamePropertyAsMethodWithPropertySerializedNameDummy('free_trial', 'has_subscribe', 'get_ready', 'is_active');
-        $expected = [
-            'free_trial_property' => 'free_trial',
-            'has_subscribe_property' => 'has_subscribe',
-            'get_ready_property' => 'get_ready',
-            'is_active_property' => 'is_active',
-        ];
-
-        $this->assertSame($expected, $this->normalizer->normalize($object));
+        $this->assertSame(['foo' => 'foo'], $normalizer->normalize(new ObjectDummyWithIgnoreAttributeAndPrivateProperty()));
     }
 
-    public function testSamePropertyAsMethodWithMethodSerializedName()
+    public function testDenormalizeWithIgnoreAttributeAndPrivateProperties()
     {
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $this->normalizer = new ObjectNormalizer($classMetadataFactory, new MetadataAwareNameConverter($classMetadataFactory));
-        $this->normalizer->setSerializer($this->serializer);
+        $normalizer = new ObjectNormalizer($classMetadataFactory);
 
-        $object = new SamePropertyAsMethodWithMethodSerializedNameDummy('free_trial', 'has_subscribe', 'get_ready', 'is_active');
-        $expected = [
-            'free_trial_method' => 'free_trial',
-            'has_subscribe_method' => 'has_subscribe',
-            'get_ready_method' => 'get_ready',
-            'is_active_method' => 'is_active',
-        ];
+        $obj = $normalizer->denormalize([
+            'foo' => 'set',
+            'ignore' => 'set',
+            'private' => 'set',
+        ], ObjectDummyWithIgnoreAttributeAndPrivateProperty::class);
 
-        $this->assertSame($expected, $this->normalizer->normalize($object));
+        $expected = new ObjectDummyWithIgnoreAttributeAndPrivateProperty();
+        $expected->foo = 'set';
+
+        $this->assertEquals($expected, $obj);
     }
 }
 
@@ -1091,7 +1093,7 @@ class LazyObjectInner extends ObjectInner
         }
     }
 
-    public function __isset($name)
+    public function __isset($name): bool
     {
         return 'foo' === $name;
     }
@@ -1187,4 +1189,14 @@ class DummyWithNullableConstructorObject
     {
         return $this->inner;
     }
+}
+
+class ObjectDummyWithIgnoreAttributeAndPrivateProperty
+{
+    public $foo = 'foo';
+
+    #[Ignore]
+    public $ignored = 'ignored';
+
+    private $private = 'private';
 }

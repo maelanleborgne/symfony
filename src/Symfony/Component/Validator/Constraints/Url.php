@@ -31,7 +31,7 @@ class Url extends Constraint
     ];
 
     public string $message = 'This value is not a valid URL.';
-    public string $tldMessage = 'This URL does not contain a TLD.';
+    public string $tldMessage = 'This URL is missing a top-level domain.';
     public array $protocols = ['http', 'https'];
     public bool $relativeProtocol = false;
     public bool $requireTld = false;
@@ -56,6 +56,10 @@ class Url extends Constraint
         ?bool $requireTld = null,
     ) {
         parent::__construct($options, $groups, $payload);
+
+        if (null === ($options['requireTld'] ?? $requireTld)) {
+            trigger_deprecation('symfony/validator', '7.1', 'Not passing a value for the "requireTld" option to the Url constraint is deprecated. Its default value will change to "true".');
+        }
 
         $this->message = $message ?? $this->message;
         $this->protocols = $protocols ?? $this->protocols;

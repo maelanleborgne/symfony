@@ -132,6 +132,10 @@ class UnsupportedSchemeException extends LogicException
             'class' => Bridge\LinkedIn\LinkedInTransportFactory::class,
             'package' => 'symfony/linked-in-notifier',
         ],
+        'lox24' => [
+            'class' => Bridge\Lox24\Lox24TransportFactory::class,
+            'package' => 'symfony/lox24-notifier',
+        ],
         'mailjet' => [
             'class' => Bridge\Mailjet\MailjetTransportFactory::class,
             'package' => 'symfony/mailjet-notifier',
@@ -195,6 +199,10 @@ class UnsupportedSchemeException extends LogicException
         'plivo' => [
             'class' => Bridge\Plivo\PlivoTransportFactory::class,
             'package' => 'symfony/plivo-notifier',
+        ],
+        'primotexto' => [
+            'class' => Bridge\Primotexto\PrimotextoTransportFactory::class,
+            'package' => 'symfony/primotexto-notifier',
         ],
         'pushover' => [
             'class' => Bridge\Pushover\PushoverTransportFactory::class,

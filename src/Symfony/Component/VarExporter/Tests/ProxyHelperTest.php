@@ -14,6 +14,7 @@ namespace Symfony\Component\VarExporter\Tests;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\VarExporter\Exception\LogicException;
 use Symfony\Component\VarExporter\ProxyHelper;
+use Symfony\Component\VarExporter\Tests\Fixtures\LazyProxy\Php82NullStandaloneReturnType;
 use Symfony\Component\VarExporter\Tests\Fixtures\LazyProxy\StringMagicGetClass;
 
 class ProxyHelperTest extends TestCase
@@ -36,6 +37,7 @@ class ProxyHelperTest extends TestCase
             $expected = str_replace(['.', ' .  .  . ', '\'$a\', \'$a\n\', "\$a\n"'], [' . ', '...', '\'$a\', "\$a\\\n", "\$a\n"'], $expected);
             $expected = str_replace('Bar', '\\'.Bar::class, $expected);
             $expected = str_replace('self', '\\'.TestForProxyHelper::class, $expected);
+            $expected = str_replace('= [namespace\M_PI, new M_PI()]', '= [\M_PI, new \Symfony\Component\VarExporter\Tests\M_PI()]', $expected);
 
             yield [$expected, $method];
         }
@@ -188,6 +190,17 @@ class ProxyHelperTest extends TestCase
         $this->expectException(LogicException::class);
         ProxyHelper::generateLazyGhost(new \ReflectionClass(StringMagicGetClass::class));
     }
+
+    /**
+     * @requires PHP 8.2
+     */
+    public function testNullStandaloneReturnType()
+    {
+        self::assertStringContainsString(
+            'public function foo(): null',
+            ProxyHelper::generateLazyProxy(new \ReflectionClass(Php82NullStandaloneReturnType::class))
+        );
+    }
 }
 
 abstract class TestForProxyHelper
@@ -223,6 +236,10 @@ abstract class TestForProxyHelper
     }
 
     public function foo9($a = self::BOB, $b = ['$a', '$a\n', "\$a\n"], $c = ['$a', '$a\n', "\$a\n", new \stdClass()])
+    {
+    }
+
+    public function foo10($a = [namespace\M_PI, new M_PI()])
     {
     }
 }

@@ -40,19 +40,16 @@ use Symfony\Component\Security\Http\SecurityRequestAttributes;
  */
 class FormLoginAuthenticator extends AbstractLoginFormAuthenticator
 {
-    private HttpUtils $httpUtils;
-    private UserProviderInterface $userProvider;
-    private AuthenticationSuccessHandlerInterface $successHandler;
-    private AuthenticationFailureHandlerInterface $failureHandler;
     private array $options;
     private HttpKernelInterface $httpKernel;
 
-    public function __construct(HttpUtils $httpUtils, UserProviderInterface $userProvider, AuthenticationSuccessHandlerInterface $successHandler, AuthenticationFailureHandlerInterface $failureHandler, array $options)
-    {
-        $this->httpUtils = $httpUtils;
-        $this->userProvider = $userProvider;
-        $this->successHandler = $successHandler;
-        $this->failureHandler = $failureHandler;
+    public function __construct(
+        private HttpUtils $httpUtils,
+        private UserProviderInterface $userProvider,
+        private AuthenticationSuccessHandlerInterface $successHandler,
+        private AuthenticationFailureHandlerInterface $failureHandler,
+        array $options,
+    ) {
         $this->options = array_merge([
             'username_parameter' => '_username',
             'password_parameter' => '_password',
@@ -141,6 +138,10 @@ class FormLoginAuthenticator extends AbstractLoginFormAuthenticator
 
         if ('' === (string) $credentials['password']) {
             throw new BadRequestHttpException(sprintf('The key "%s" must be a non-empty string.', $this->options['password_parameter']));
+        }
+
+        if (!\is_string($credentials['csrf_token'] ?? '') && (!\is_object($credentials['csrf_token']) || !method_exists($credentials['csrf_token'], '__toString'))) {
+            throw new BadRequestHttpException(sprintf('The key "%s" must be a string, "%s" given.', $this->options['csrf_parameter'], \gettype($credentials['csrf_token'])));
         }
 
         return $credentials;

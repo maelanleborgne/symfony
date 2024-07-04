@@ -437,16 +437,16 @@ class AbstractObjectNormalizerTest extends TestCase
 
         if (method_exists(PhpDocExtractor::class, 'getType')) {
             $extractor->method('getType')
-                ->will($this->onConsecutiveCalls(
+                ->willReturn(
                     Type::list(Type::object(DummyChild::class)),
                     null,
-                ));
+                );
         } else {
             $extractor->method('getTypes')
-                ->will($this->onConsecutiveCalls(
+                ->willReturn(
                     [new LegacyType('array', false, null, true, new LegacyType('int'), new LegacyType('object', false, DummyChild::class))],
                     null
-                ));
+                );
         }
 
         $denormalizer = new AbstractObjectNormalizerCollectionDummy(null, null, $extractor);
@@ -501,16 +501,16 @@ class AbstractObjectNormalizerTest extends TestCase
 
         if (method_exists(PhpDocExtractor::class, 'getType')) {
             $extractor->method('getType')
-                ->will($this->onConsecutiveCalls(
+                ->willReturn(
                     Type::list(Type::string()),
                     null,
-                ));
+                );
         } else {
             $extractor->method('getTypes')
-                ->will($this->onConsecutiveCalls(
+                ->willReturn(
                     [new LegacyType('array', false, null, true, new LegacyType('int'), new LegacyType('string'))],
                     null
-                ));
+                );
         }
 
         $denormalizer = new AbstractObjectNormalizerCollectionDummy(null, null, $extractor);
@@ -697,7 +697,7 @@ class AbstractObjectNormalizerTest extends TestCase
 
         if (method_exists(PhpDocExtractor::class, 'getType')) {
             $extractor->method('getType')
-                ->will($this->onConsecutiveCalls(
+                ->willReturn(
                     Type::bool(),
                     Type::bool(),
                     Type::bool(),
@@ -710,10 +710,10 @@ class AbstractObjectNormalizerTest extends TestCase
                     Type::float(),
                     Type::float(),
                     Type::float(),
-                ));
+                );
         } else {
             $extractor->method('getTypes')
-                ->will($this->onConsecutiveCalls(
+                ->willReturn(
                     [new LegacyType('bool')],
                     [new LegacyType('bool')],
                     [new LegacyType('bool')],
@@ -726,7 +726,7 @@ class AbstractObjectNormalizerTest extends TestCase
                     [new LegacyType('float')],
                     [new LegacyType('float')],
                     [new LegacyType('float')]
-                ));
+                );
         }
 
         $denormalizer = new AbstractObjectNormalizerCollectionDummy(null, null, $extractor);
@@ -1083,6 +1083,89 @@ class AbstractObjectNormalizerTest extends TestCase
 
         $this->assertFalse($normalizer->childContextCacheKey);
     }
+
+    public function testDenormalizeXmlScalar()
+    {
+        $normalizer = new class() extends AbstractObjectNormalizer {
+            public function __construct()
+            {
+                parent::__construct(null, new MetadataAwareNameConverter(new ClassMetadataFactory(new AttributeLoader())));
+            }
+
+            protected function extractAttributes(object $object, ?string $format = null, array $context = []): array
+            {
+                return [];
+            }
+
+            protected function getAttributeValue(object $object, string $attribute, ?string $format = null, array $context = []): mixed
+            {
+                return null;
+            }
+
+            protected function setAttributeValue(object $object, string $attribute, $value, ?string $format = null, array $context = []): void
+            {
+                $object->$attribute = $value;
+            }
+
+            public function getSupportedTypes(?string $format): array
+            {
+                return ['*' => false];
+            }
+        };
+
+        $this->assertSame('scalar', $normalizer->denormalize('scalar', XmlScalarDummy::class, 'xml')->value);
+    }
+
+    public function testNormalizationWithMaxDepthOnStdclassObjectDoesNotThrowWarning()
+    {
+        $object = new \stdClass();
+        $object->string = 'yes';
+
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+        $normalizer = new ObjectNormalizer($classMetadataFactory);
+        $normalized = $normalizer->normalize($object, context: [
+            AbstractObjectNormalizer::ENABLE_MAX_DEPTH => true,
+        ]);
+
+        $this->assertSame(['string' => 'yes'], $normalized);
+    }
+
+    public function testDenormalizeCollectionOfScalarTypesPropertyWithPhpDocExtractor()
+    {
+        $normalizer = new AbstractObjectNormalizerWithMetadataAndPhpDocExtractor();
+        $data = [
+            'type' => 'foo',
+            'values' => [
+                ['1'],
+                ['2'],
+                ['3'],
+                ['4'],
+                ['5'],
+            ],
+        ];
+        $expected = new ScalarCollectionDocBlockDummy([[1], [2], [3], [4], [5]]);
+
+        $this->assertEquals($expected, $normalizer->denormalize($data, ScalarCollectionDocBlockDummy::class));
+    }
+
+    public function testDenormalizeCollectionOfUnionTypesPropertyWithPhpDocExtractor()
+    {
+        $normalizer = new AbstractObjectNormalizerWithMetadataAndPhpDocExtractor();
+        $data = [
+            'values1' => [
+                'foo' => 'foo',
+                'bar' => 222,
+            ],
+            'values2' => [
+                'baz' => 'baz',
+                'qux' => 333,
+            ],
+        ];
+        $expected = new UnionCollectionDocBlockDummy($data['values1']);
+        $expected->values2 = $data['values2'];
+
+        $this->assertEquals($expected, $normalizer->denormalize($data, UnionCollectionDocBlockDummy::class));
+    }
 }
 
 class AbstractObjectNormalizerDummy extends AbstractObjectNormalizer
@@ -1345,6 +1428,12 @@ class DummyChild
     public $bar;
 }
 
+class XmlScalarDummy
+{
+    #[SerializedName('#')]
+    public $value;
+}
+
 class SerializerCollectionDummy implements SerializerInterface, DenormalizerInterface
 {
     private array $normalizers;
@@ -1486,5 +1575,71 @@ class DummyWithEnumUnion
     public function __construct(
         public readonly EnumA|EnumB $enum,
     ) {
+    }
+}
+
+#[DiscriminatorMap('type', ['foo' => ScalarCollectionDocBlockDummy::class])]
+class ScalarCollectionDocBlockDummy
+{
+    /**
+     * @param array<int, array<int, string>>|null $values
+     */
+    public function __construct(
+        private readonly ?array $values = null,
+    ) {
+    }
+
+    /** @return array<int, array<int, string>>|null */
+    public function getValues(): ?array
+    {
+        return $this->values;
+    }
+}
+
+class UnionCollectionDocBlockDummy
+{
+    /**
+     * @param array<string, string|int> $values1
+     */
+    public function __construct(
+        public array $values1,
+    ) {
+    }
+
+    /**
+     * @var array<string, string|int>
+     */
+    public array $values2;
+}
+
+class AbstractObjectNormalizerWithMetadataAndPhpDocExtractor extends AbstractObjectNormalizer
+{
+    public function __construct()
+    {
+        parent::__construct(new ClassMetadataFactory(new AttributeLoader()), null, new PropertyInfoExtractor([], [new PhpDocExtractor()]));
+    }
+
+    protected function extractAttributes(object $object, ?string $format = null, array $context = []): array
+    {
+        return [];
+    }
+
+    protected function getAttributeValue(object $object, string $attribute, ?string $format = null, array $context = []): mixed
+    {
+        return null;
+    }
+
+    protected function setAttributeValue(object $object, string $attribute, mixed $value, ?string $format = null, array $context = []): void
+    {
+        if (property_exists($object, $attribute)) {
+            $object->$attribute = $value;
+        }
+    }
+
+    public function getSupportedTypes(?string $format): array
+    {
+        return [
+            '*' => false,
+        ];
     }
 }

@@ -34,12 +34,15 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 class PhpFileLoader extends FileLoader
 {
     protected bool $autoRegisterAliasesForSinglyImplementedInterfaces = false;
-    private ?ConfigBuilderGeneratorInterface $generator;
 
-    public function __construct(ContainerBuilder $container, FileLocatorInterface $locator, ?string $env = null, ?ConfigBuilderGeneratorInterface $generator = null, bool $prepend = false)
-    {
+    public function __construct(
+        ContainerBuilder $container,
+        FileLocatorInterface $locator,
+        ?string $env = null,
+        private ?ConfigBuilderGeneratorInterface $generator = null,
+        bool $prepend = false,
+    ) {
         parent::__construct($container, $locator, $env, $prepend);
-        $this->generator = $generator;
     }
 
     public function load(mixed $resource, ?string $type = null): mixed
@@ -145,16 +148,8 @@ class PhpFileLoader extends FileLoader
 
         $callback(...$arguments);
 
-        $this->loadFromExtensions($configBuilders);
-    }
-
-    /**
-     * @param iterable<ConfigBuilderInterface> $configBuilders
-     */
-    private function loadFromExtensions(iterable $configBuilders): void
-    {
         foreach ($configBuilders as $configBuilder) {
-            $this->loadExtensionConfig($configBuilder->getExtensionAlias(), $configBuilder->toArray());
+            $this->loadExtensionConfig($configBuilder->getExtensionAlias(), ContainerConfigurator::processValue($configBuilder->toArray()));
         }
 
         $this->loadExtensionConfigs();

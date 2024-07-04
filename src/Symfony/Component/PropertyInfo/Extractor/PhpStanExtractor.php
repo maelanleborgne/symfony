@@ -21,6 +21,7 @@ use PHPStan\PhpDocParser\Parser\ConstExprParser;
 use PHPStan\PhpDocParser\Parser\PhpDocParser;
 use PHPStan\PhpDocParser\Parser\TokenIterator;
 use PHPStan\PhpDocParser\Parser\TypeParser;
+use Symfony\Component\PropertyInfo\PhpStan\NameScope;
 use Symfony\Component\PropertyInfo\PhpStan\NameScopeFactory;
 use Symfony\Component\PropertyInfo\PropertyTypeExtractorInterface;
 use Symfony\Component\PropertyInfo\Type as LegacyType;
@@ -55,6 +56,9 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
     private array $accessorPrefixes;
     private array $arrayMutatorPrefixes;
 
+    /** @var array<string, NameScope> */
+    private array $contexts = [];
+
     /**
      * @param list<string>|null $mutatorPrefixes
      * @param list<string>|null $accessorPrefixes
@@ -82,16 +86,10 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
         $this->typeContextFactory = new TypeContextFactory($this->stringTypeResolver);
     }
 
-    /**
-     * @deprecated since Symfony 7.1, use "getType" instead
-     */
     public function getTypes(string $class, string $property, array $context = []): ?array
     {
-        trigger_deprecation('symfony/property-info', '7.1', 'The "%s()" method is deprecated, use "%s::getType()" instead.', __METHOD__, self::class);
-
         /** @var PhpDocNode|null $docNode */
         [$docNode, $source, $prefix, $declaringClass] = $this->getDocBlock($class, $property);
-        $nameScope = $this->nameScopeFactory->create($class, $declaringClass);
         if (null === $docNode) {
             return null;
         }
@@ -125,6 +123,7 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
                 continue;
             }
 
+            $nameScope ??= $this->contexts[$class.'/'.$declaringClass] ??= $this->nameScopeFactory->create($class, $declaringClass);
             foreach ($this->phpStanTypeHelper->getTypes($tagDocNode->value, $nameScope) as $type) {
                 switch ($type->getClassName()) {
                     case 'self':
@@ -159,14 +158,10 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
     }
 
     /**
-     * @deprecated since Symfony 7.1, use "getTypeFromConstructor" instead
-     *
      * @return LegacyType[]|null
      */
     public function getTypesFromConstructor(string $class, string $property): ?array
     {
-        trigger_deprecation('symfony/property-info', '7.1', 'The "%s()" method is deprecated, use "%s::getTypeFromConstructor()" instead.', __METHOD__, self::class);
-
         if (null === $tagDocNode = $this->getDocBlockFromConstructor($class, $property)) {
             return null;
         }
@@ -183,6 +178,9 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
         return $types;
     }
 
+    /**
+     * @experimental
+     */
     public function getType(string $class, string $property, array $context = []): ?Type
     {
         /** @var PhpDocNode|null $docNode */
@@ -229,6 +227,9 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
         return Type::list($type);
     }
 
+    /**
+     * @experimental
+     */
     public function getTypeFromConstructor(string $class, string $property): ?Type
     {
         if (!$tagDocNode = $this->getDocBlockFromConstructor($class, $property)) {
@@ -312,6 +313,15 @@ final class PhpStanExtractor implements PropertyTypeExtractorInterface, Construc
 
         if (!$this->canAccessMemberBasedOnItsVisibility($reflectionProperty)) {
             return null;
+        }
+
+        $reflector = $reflectionProperty->getDeclaringClass();
+
+        foreach ($reflector->getTraits() as $trait) {
+            if ($trait->hasProperty($property)) {
+                return $this->getDocBlockFromProperty($trait->getName(), $property);
+            }
+
         }
 
         // Type can be inside property docblock as `@var`

@@ -32,6 +32,7 @@ use Symfony\Component\Serializer\Mapping\ClassDiscriminatorResolverInterface;
 use Symfony\Component\Serializer\Mapping\ClassMetadataInterface;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactoryInterface;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
+use Symfony\Component\TypeInfo\Exception\LogicException as TypeInfoLogicException;
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\TypeInfo\Type\IntersectionType;
@@ -152,6 +153,8 @@ abstract class AbstractObjectNormalizer extends AbstractNormalizer
 
     public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
     {
+        $context['_read_attributes'] = true;
+
         if (!isset($context['cache_key'])) {
             $context['cache_key'] = $this->getCacheKey($format, $context);
         }
@@ -293,6 +296,8 @@ abstract class AbstractObjectNormalizer extends AbstractNormalizer
 
     public function denormalize(mixed $data, string $type, ?string $format = null, array $context = []): mixed
     {
+        $context['_read_attributes'] = false;
+
         if (!isset($context['cache_key'])) {
             $context['cache_key'] = $this->getCacheKey($format, $context);
         }
@@ -301,6 +306,10 @@ abstract class AbstractObjectNormalizer extends AbstractNormalizer
 
         if (null === $data && isset($context['value_type']) && ($context['value_type'] instanceof Type || $context['value_type'] instanceof LegacyType) && $context['value_type']->isNullable()) {
             return null;
+        }
+
+        if (XmlEncoder::FORMAT === $format && !\is_array($data)) {
+            $data = ['#' => $data];
         }
 
         $allowedAttributes = $this->getAllowedAttributes($type, $context, true);
@@ -694,7 +703,11 @@ abstract class AbstractObjectNormalizer extends AbstractNormalizer
                 }
 
                 if ($collectionValueType) {
-                    $collectionValueBaseType = $collectionValueType instanceof UnionType ? $collectionValueType->asNonNullable()->getBaseType() : $collectionValueType->getBaseType();
+                    try {
+                        $collectionValueBaseType = $collectionValueType->getBaseType();
+                    } catch (TypeInfoLogicException) {
+                        $collectionValueBaseType = Type::mixed();
+                    }
 
                     if ($collectionValueBaseType instanceof ObjectType) {
                         $typeIdentifier = TypeIdentifier::OBJECT;
@@ -722,7 +735,7 @@ abstract class AbstractObjectNormalizer extends AbstractNormalizer
                                 $typeIdentifier = TypeIdentifier::OBJECT;
                                 $class = $t->getClassName();
                             } else {
-                                $typeIdentifier = $t->getTypeIdentifier()->value;
+                                $typeIdentifier = $t->getTypeIdentifier();
                                 $class = null;
                             }
                         }
@@ -913,7 +926,7 @@ abstract class AbstractObjectNormalizer extends AbstractNormalizer
     private function isMaxDepthReached(array $attributesMetadata, string $class, string $attribute, array &$context): bool
     {
         if (!($enableMaxDepth = $context[self::ENABLE_MAX_DEPTH] ?? $this->defaultContext[self::ENABLE_MAX_DEPTH] ?? false)
-            || null === $maxDepth = $attributesMetadata[$attribute]?->getMaxDepth()
+            || !isset($attributesMetadata[$attribute]) || null === $maxDepth = $attributesMetadata[$attribute]?->getMaxDepth()
         ) {
             return false;
         }

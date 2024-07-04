@@ -27,7 +27,9 @@
     "autoload": {
         "psr-4": { "Symfony\\Component\\Emoji\\": "" },
         "exclude-from-classmap": [
-            "/Tests/"
+            "/Tests/",
+            "/Resources/data/",
+            "/Resources/bin/"
         ]
     },
     "minimum-stability": "dev"

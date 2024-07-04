@@ -18,23 +18,18 @@ use Symfony\Component\HttpFoundation\Exception\LogicException;
  */
 class UriSigner
 {
-    private string $secret;
-    private string $hashParameter;
-    private string $expirationParameter;
-
     /**
      * @param string $hashParameter       Query string parameter to use
      * @param string $expirationParameter Query string parameter to use for expiration
      */
-    public function __construct(#[\SensitiveParameter] string $secret, string $hashParameter = '_hash', string $expirationParameter = '_expiration')
-    {
+    public function __construct(
+        #[\SensitiveParameter] private string $secret,
+        private string $hashParameter = '_hash',
+        private string $expirationParameter = '_expiration',
+    ) {
         if (!$secret) {
             throw new \InvalidArgumentException('A non-empty secret is required.');
         }
-
-        $this->secret = $secret;
-        $this->hashParameter = $hashParameter;
-        $this->expirationParameter = $expirationParameter;
     }
 
     /**
@@ -51,8 +46,18 @@ class UriSigner
      *
      * The expiration is added as a query string parameter.
      */
-    public function sign(string $uri, \DateTimeInterface|\DateInterval|int|null $expiration = null): string
+    public function sign(string $uri/*, \DateTimeInterface|\DateInterval|int|null $expiration = null*/): string
     {
+        $expiration = null;
+
+        if (1 < \func_num_args()) {
+            $expiration = func_get_arg(1);
+        }
+
+        if (null !== $expiration && !$expiration instanceof \DateTimeInterface && !$expiration instanceof \DateInterval && !\is_int($expiration)) {
+            throw new \TypeError(sprintf('The second argument of %s() must be an instance of %s or %s, an integer or null (%s given).', __METHOD__, \DateTimeInterface::class, \DateInterval::class, get_debug_type($expiration)));
+        }
+
         $url = parse_url($uri);
         $params = [];
 

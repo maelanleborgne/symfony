@@ -13,8 +13,8 @@ namespace Symfony\Component\DependencyInjection\Compiler;
 
 use Symfony\Component\Config\Resource\ClassExistenceResource;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\DependencyInjection\Attribute\AutowireCallable;
 use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
+use Symfony\Component\DependencyInjection\Attribute\AutowireInline;
 use Symfony\Component\DependencyInjection\Attribute\Lazy;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -41,16 +41,15 @@ class AutowirePass extends AbstractRecursivePass
     private array $ambiguousServiceTypes;
     private array $autowiringAliases;
     private ?string $lastFailure = null;
-    private bool $throwOnAutowiringException;
     private ?string $decoratedClass = null;
     private ?string $decoratedId = null;
     private object $defaultArgument;
     private ?\Closure $restorePreviousValue = null;
     private ?self $typesClone = null;
 
-    public function __construct(bool $throwOnAutowireException = true)
-    {
-        $this->throwOnAutowiringException = $throwOnAutowireException;
+    public function __construct(
+        private bool $throwOnAutowiringException = true,
+    ) {
         $this->defaultArgument = new class() {
             public $value;
             public $names;
@@ -306,6 +305,17 @@ class AutowirePass extends AbstractRecursivePass
 
                 foreach ($attributes as $attribute) {
                     $attribute = $attribute->newInstance();
+                    $value = $attribute instanceof Autowire ? $attribute->value : null;
+
+                    if (\is_string($value) && str_starts_with($value, '%env(') && str_ends_with($value, ')%')) {
+                        if ($parameter->getType() instanceof \ReflectionNamedType && 'bool' === $parameter->getType()->getName() && !str_starts_with($value, '%env(bool:')) {
+                            $attribute = new Autowire(substr_replace($value, 'bool:', 5, 0));
+                        }
+                        if ($parameter->isDefaultValueAvailable() && $parameter->allowsNull() && null === $parameter->getDefaultValue() && !preg_match('/(^|:)default:/', $value)) {
+                            $attribute = new Autowire(substr_replace($value, 'default::', 5, 0));
+                        }
+                    }
+
                     $invalidBehavior = $parameter->allowsNull() ? ContainerInterface::NULL_ON_INVALID_REFERENCE : ContainerBuilder::EXCEPTION_ON_INVALID_REFERENCE;
 
                     try {
@@ -320,7 +330,7 @@ class AutowirePass extends AbstractRecursivePass
                         continue 2;
                     }
 
-                    if ($attribute instanceof AutowireCallable) {
+                    if ($attribute instanceof AutowireInline) {
                         $value = $attribute->buildDefinition($value, $type, $parameter);
                         $value = $this->doProcessValue($value);
                     } elseif ($lazy = $attribute->lazy) {
@@ -620,7 +630,7 @@ class AutowirePass extends AbstractRecursivePass
             }
 
             if ($r->isInterface() && !$alternatives) {
-                $message .= ' Did you create a class that implements this interface?';
+                $message .= ' Did you create an instantiable class that implements this interface?';
             }
         }
 

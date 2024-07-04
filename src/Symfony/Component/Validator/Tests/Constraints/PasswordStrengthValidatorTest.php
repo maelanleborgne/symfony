@@ -92,4 +92,20 @@ class PasswordStrengthValidatorTest extends ConstraintValidatorTestCase
             '0',
         ];
     }
+
+    /**
+     * @dataProvider getPasswordValues
+     */
+    public function testStrengthEstimator(string $password, int $expectedStrength)
+    {
+        self::assertSame($expectedStrength, PasswordStrengthValidator::estimateStrength((string) $password));
+    }
+
+    public static function getPasswordValues(): iterable
+    {
+        yield ['How-is-this', PasswordStrength::STRENGTH_WEAK];
+        yield ['Reasonable-pwd', PasswordStrength::STRENGTH_MEDIUM];
+        yield ['This 1s a very g00d Pa55word! ;-)', PasswordStrength::STRENGTH_VERY_STRONG];
+        yield ['pudding-smack-👌🏼-fox-😎', PasswordStrength::STRENGTH_VERY_STRONG];
+    }
 }
