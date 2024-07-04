@@ -708,7 +708,7 @@ class FrameworkExtension extends Extension
             $reachableStaticMethods = [];
             foreach ($declaringClass->getMethods(\ReflectionMethod::IS_STATIC) as $method) {
                 $reachableStaticMethods[] = $method->name;
-                if ($declaringClass->name !== $method->class || // If it's been declared by a parent
+                if ($declaringClass->name !== $method->class || // If it was declared by a parent
                     $reflector->name === $method->name || // If it's the method we're processing
                     0 === \count($method->getAttributes(Constructor::class)) // If it doesn't have the attribute
                 ) {
